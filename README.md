@@ -33,6 +33,26 @@ func play_data(data: PackedFloat32Array) -> void:
 
 ```
 
+## Building
+In order to build this project, you need scons. Currently only Windows x64 (MSVC) is supported.
+
+1. Clone repo with submodules (godot-cpp)
+```
+git clone --recurse-submodules https://github.com/microtaur/godot4-opus.git && cd godot4-opus
+```
+
+2. Build debug
+```
+scons
+```
+
+3. Build release
+```
+scons target=template_release
+```
+
+More information on building GDExtensions: [https://docs.godotengine.org/pl/4.x/tutorials/scripting/gdextension/gdextension_cpp_example.html](https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/gdextension_cpp_example.html)
+
 ## Known limitations
 
 - This is more POC than a production-ready solution although it's not too far from achieving this status. I'm using this code successfully in a scenario similar to the one presented in this demo:
