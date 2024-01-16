@@ -38,6 +38,7 @@ func play_data(data: PackedFloat32Array) -> void:
 - This is more POC than a production-ready solution although it's not too far from achieving this status. I'm using this code successfully in a scenario similar to the one presented in this demo:
 https://github.com/godotengine/godot-demo-projects/tree/master/networking/webrtc_signaling
 - Buffer size must be == 480
+- Quality settings are currently hardcoded. Bitrate is 24000; bandwith is OPUS_BANDWIDTH_SUPERWIDEBAND.
 - At the moment this works only on Windows x64. I haven't tried other platforms. Pre-built version of libopus resides in `3rdparty` directory.
 
 ## License
