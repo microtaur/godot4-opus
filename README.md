@@ -4,32 +4,41 @@ A GDExtension that adds to Godot4 support for encoding voice data using the Opus
 
 ## Overview
 
-This extension adds a new singleton to Godot: `Opus` with two methods: `encode` and `decode`.
+This extension adds a new node to Godot: `Opus` with three methods: `encode`, `decode` and `decode_and_play`.
 
 These can be used to compress audio obtained `AudioEffectCapture` and then to decode it so it's usable in Godot again.
 
-Quick and dirty example (full demo coming soon):
+Usage is best illustrated in this demo: https://github.com/microtaur/godot4-p2p-voip
+
+Most interesting part from the demo code illustrating how this works:
 
 ```GDScript
 
-func _process_audio() -> void:
-    if has_data() and active:
-        call_deferred("rpc", "play_data", get_data())
+var _encoder := Opus.new()
+
+...
+
+func _audio_process():
+	while true:
+		if has_data() and active:
+			var data = get_data()
+			call_deferred("rpc", "play_data", data)
+		else:
+			OS.delay_msec(10)
 
 ...
 
 func get_data() -> PackedFloat32Array:
-    var data = effect.get_buffer(BUFFER_SIZE)
-    return Opus.encode(data)
+	var data = effect.get_buffer(BUFFER_SIZE)
+	return _encoder.encode(data)
 
 ...
 
-@rpc("any_peer", "call_remote", "unreliable_ordered")
+@rpc("any_peer", "call_remote", "reliable")
 func play_data(data: PackedFloat32Array) -> void:
-    var id = client.multiplayer.get_remote_sender_id()
-    var decoded = Opus.decode(data)
-    for b in range(0, BUFFER_SIZE):
-        _get_generator(id).push_frame(decoded[b])
+	var id = client.multiplayer.get_remote_sender_id()
+	_update_player_pool()
+	_get_opus_instance(id).decode_and_play(_get_generator(id), data)
 
 ```
 
