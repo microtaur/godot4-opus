@@ -5,25 +5,15 @@
 
 namespace godot {
 
-Opus *Opus::singleton = nullptr;
-constexpr auto sampleFrames = 480;
-
 void Opus::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("encode"), &Opus::encode);
 	ClassDB::bind_method(D_METHOD("decode"), &Opus::decode);
-}
-
-Opus *Opus::get_singleton()
-{
-	return singleton;
+	ClassDB::bind_method(D_METHOD("decode_and_play"), &Opus::decode_and_play);
 }
 
 Opus::Opus()
 {
-	ERR_FAIL_COND(singleton != nullptr);
-	singleton = this;
-
 	int err{};
 
 	m_encoder = opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, &err);
@@ -37,31 +27,40 @@ Opus::Opus()
 	err = opus_encoder_ctl(m_encoder, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_SUPERWIDEBAND));
 	ERR_FAIL_COND(err < 0);
 
+	err = opus_encoder_ctl(m_encoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+	ERR_FAIL_COND(err < 0);
+
 	err = opus_encoder_ctl(m_encoder, OPUS_SET_BITRATE(24000));
 	ERR_FAIL_COND(err < 0);
+
+	m_encodeInputBuffer.resize(SampleFrames);
+	m_encodeOutputBuffer.resize(SampleFrames);
+	m_decodeOutputBuffer.resize(SampleFrames);
 }
 
 Opus::~Opus()
 {
-	ERR_FAIL_COND(singleton != this);
 	opus_encoder_destroy(m_encoder);
 	opus_decoder_destroy(m_decoder);
-	singleton = nullptr;
 }
 
 PackedFloat32Array Opus::encode(PackedVector2Array input)
 {
-	if (input.size() < sampleFrames) {
+	if (input.size() < SampleFrames) {
 		return {};
 	}
 
-	std::vector<float> data(sampleFrames);
-	for (size_t i = 0; i < sampleFrames; i++) {
-		data[i] = input[i].x;
+	for (size_t i = 0; i < SampleFrames; i++) {
+		m_encodeInputBuffer[i] = input[i].x;
 	}
 
-	std::vector<unsigned char> output(sampleFrames * 2);
-	const auto r = opus_encode_float(m_encoder, data.data(), sampleFrames, output.data(), output.size());
+	const auto r = opus_encode_float(
+		m_encoder,
+		m_encodeInputBuffer.data(),
+		SampleFrames,
+		m_encodeOutputBuffer.data(),
+		m_encodeOutputBuffer.size()
+	);
 	if (r == -1) {
 		return {};
 	}
@@ -69,7 +68,7 @@ PackedFloat32Array Opus::encode(PackedVector2Array input)
 	auto outputArray = PackedFloat32Array{};
 	outputArray.resize(r);
 	for (size_t i = 0; i < r; i++) {
-		outputArray[i] = output[i];
+		outputArray[i] = m_encodeOutputBuffer[i];
 	}
 
 	return outputArray;
@@ -77,24 +76,36 @@ PackedFloat32Array Opus::encode(PackedVector2Array input)
 
 PackedVector2Array Opus::decode(PackedFloat32Array input)
 {
-	std::vector<unsigned char> inputData(sampleFrames*2);
+	std::vector<unsigned char> inputData(input.size());
 	for (size_t i = 0; i < input.size(); i++) {
 		inputData[i] = input[i];
 	}
 
-	std::vector<float> output(sampleFrames*2);
-	const auto r = opus_decode_float(m_decoder, inputData.data(), input.size(), output.data(), sampleFrames, 0);
-	if (r != sampleFrames) {
+	const auto r = opus_decode_float(
+		m_decoder,
+		inputData.data(),
+		input.size(),
+		m_decodeOutputBuffer.data(),
+		SampleFrames,
+		0
+	);
+	if (r != SampleFrames) {
 		return {};
 	}
 
 	auto packedOutput = PackedVector2Array{};
 	packedOutput.resize(r);
 	for (size_t i = 0; i < r; i++) {
-		packedOutput[i] = Vector2{output[i], output[i]};
+		packedOutput[i] = Vector2{m_decodeOutputBuffer[i], m_decodeOutputBuffer[i]};
 	}
 
 	return packedOutput;
+}
+
+void Opus::decode_and_play(Ref<AudioStreamGeneratorPlayback> buffer, PackedFloat32Array input)
+{
+	const auto decoded = decode(input);
+	buffer->push_buffer(decoded);
 }
 
 }

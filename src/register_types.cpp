@@ -22,9 +22,6 @@ void gdextension_initialize(ModuleInitializationLevel p_level)
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE)
 	{
 		ClassDB::register_class<Opus>();
-
-		_godot_opus_singleton = memnew(Opus);
-		Engine::get_singleton()->register_singleton("Opus", Opus::get_singleton());
 	}
 }
 
@@ -32,8 +29,7 @@ void gdextension_terminate(ModuleInitializationLevel p_level)
 {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE)
 	{
-		Engine::get_singleton()->unregister_singleton("Opus");
-		memdelete(_godot_opus_singleton);
+
 	}
 }
 
