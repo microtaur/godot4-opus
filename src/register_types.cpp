@@ -12,6 +12,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include "GodotOpus.h"
+#include "AudioProcessor.h"
 
 using namespace godot;
 
@@ -22,6 +23,7 @@ void gdextension_initialize(ModuleInitializationLevel p_level)
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE)
 	{
 		ClassDB::register_class<Opus>();
+		ClassDB::register_class<AudioProcessor>();
 	}
 }
 
