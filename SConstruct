@@ -10,9 +10,9 @@ env.Append(CPPPATH=["src/"])
 sources = Glob("src/*.cpp")
 
 # Opus (Windows x64)
-env.Append(CPPPATH=['#3rdparty/opus/include'])
-env.Append(LIBPATH=['#3rdparty/opus/lib'])
-env.Append(LIBS=['opus'])
+env.Append(CPPPATH=['#3rdparty/opus/include', '#3rdparty/speex/include'])
+env.Append(LIBPATH=['#3rdparty/opus/lib', '#3rdparty/speex/lib'])
+env.Append(LIBS=['opus', 'libspeex', 'libspeexdsp'])
 
 (extension_path,) = glob("export/addons/*/*.gdextension")
 addon_path = Path(extension_path).parent
