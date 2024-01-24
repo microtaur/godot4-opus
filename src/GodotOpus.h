@@ -6,6 +6,7 @@
 #include <godot_cpp/classes/audio_stream_generator_playback.hpp>
 
 #include "opus.h"
+#include "speex/speex_resampler.h"
 
 namespace godot {
 
@@ -22,19 +23,25 @@ public:
 	Opus();
 	~Opus();
 
-	PackedFloat32Array encode(PackedVector2Array input);
-	PackedVector2Array decode(PackedFloat32Array input);
+	void update_mix_rate(size_t input, size_t output);
 
-	void decode_and_play(Ref<AudioStreamGeneratorPlayback> buffer, PackedFloat32Array input);
+	PackedByteArray encode(PackedVector2Array input);
+	PackedVector2Array decode(PackedByteArray input);
+
+	void decode_and_play(Ref<AudioStreamGeneratorPlayback> buffer, PackedByteArray input);
 
 private:
-	std::vector<float> m_encodeInputBuffer;
-	std::vector<float> m_decodeOutputBuffer;
-	std::vector<unsigned char> m_encodeOutputBuffer;
+	PackedVector2Array m_encodeSampleBuffer;
+	PackedVector2Array m_decodeSampleBuffer;
+
+	size_t m_outputMixRate{44100};
+	size_t m_inputMixRate{44100};
 
 	OpusEncoder* m_encoder;
 	OpusDecoder* m_decoder;
 
+	SpeexResamplerState* m_encodeResampler;
+	SpeexResamplerState* m_decodeResampler;
 };
 
 }
