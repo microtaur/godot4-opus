@@ -4,3 +4,9 @@ export
 addons/**/~*.dll
 .sconsign.dblite
 *.obj
+
+# Visual-studio related
+.vs
+*.sln
+*.vcxproj*
+x64
