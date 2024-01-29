@@ -22,13 +22,19 @@ public:
 	~AudioProcessor();
 
 	void process();
-	size_t get_mix_rate() const;
+
+	size_t get_input_mix_rate() const;
+	size_t get_output_mix_rate() const;
 
 private:
-    IMMDeviceEnumerator *m_deviceEnumerator{};
-    IMMDevice *m_defaultDevice{};
-    IAudioClient *m_audioClient{};
-    WAVEFORMATEX *m_pwfx{};
+	IMMDeviceEnumerator* m_deviceEnumerator = nullptr;
+	IMMDevice* m_defaultOutputDevice = nullptr;
+	IAudioClient* m_outputAudioClient = nullptr;
+	WAVEFORMATEX* m_outputMixFormat = nullptr;
+
+	IMMDevice* m_defaultInputDevice = nullptr;
+	IAudioClient* m_inputAudioClient = nullptr;
+	WAVEFORMATEX* m_inputMixFormat = nullptr;
 };
 
 }
