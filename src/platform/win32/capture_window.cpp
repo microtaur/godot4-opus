@@ -1,156 +1,246 @@
 #include "capture_window.h"
-
-#include "Windows.h"
+#include <godot_cpp/variant/utility_functions.hpp>
 
 #include <chrono>
+
+#include <d3d11.h>
+#include <dxgi1_2.h>
+#include <wrl/client.h>
+
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
+
+
+//#define PROFILER_ENABLED
+
+using namespace godot;
 
 namespace microtaur
 {
 
-namespace
+class AcceleratedWindowCapturer
 {
-struct Bitmap {
-  HBITMAP bmp;
-  int width;
-  int height;
-};
-
-struct MonitorEnumData {
-  int targetMonitorIndex;
-  int currentMonitorIndex;
-  HMONITOR hMonitor;
-};
-
-BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
-  MonitorEnumData* pData = reinterpret_cast<MonitorEnumData*>(dwData);
-  if (pData->currentMonitorIndex == pData->targetMonitorIndex) {
-    pData->hMonitor = hMonitor;
-    return FALSE;
-  }
-  pData->currentMonitorIndex++;
-  return TRUE;
-}
-
-Bitmap CaptureScreen(int screenId) {
-  MonitorEnumData med;
-  med.targetMonitorIndex = screenId;
-  med.currentMonitorIndex = 0;
-  med.hMonitor = nullptr;
-
-  EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&med));
-
-  if (med.hMonitor == nullptr) {
-    // No monitor found with the given ID
-    return { NULL, 0, 0 };
+public:
+  AcceleratedWindowCapturer() {
+    init();
   }
 
-  MONITORINFOEX mi;
-  mi.cbSize = sizeof(mi);
-  GetMonitorInfo(med.hMonitor, &mi);
+  void init()
+  {
+    D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+    auto hr = D3D11CreateDevice(
+      nullptr,
+      D3D_DRIVER_TYPE_HARDWARE,
+      nullptr,
+      0,
+      &featureLevel,
+      1,
+      D3D11_SDK_VERSION,
+      &m_device,
+      nullptr,
+      &m_context
+    );
+    if (FAILED(hr)) {
+      reset();
+      return;
+    }
 
-  HDC hMonitorDC = CreateDC(TEXT("DISPLAY"), mi.szDevice, NULL, NULL);
-  HDC hMemoryDC = CreateCompatibleDC(hMonitorDC);
+    IDXGIDevice* dxgiDevice = nullptr;
+    hr = m_device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&dxgiDevice));
+    if (FAILED(hr)) {
+      reset();
+      return;
+    }
 
-  int width = mi.rcMonitor.right - mi.rcMonitor.left;
-  int height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+    IDXGIAdapter* dxgiAdapter = nullptr;
+    hr = dxgiDevice->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void**>(&dxgiAdapter));
+    if (FAILED(hr)) {
+      reset();
+      return;
+    }
+    dxgiDevice->Release();
 
-  HBITMAP hBitmap = CreateCompatibleBitmap(hMonitorDC, width, height);
-  HBITMAP hOldBitmap = static_cast<HBITMAP>(SelectObject(hMemoryDC, hBitmap));
-  BitBlt(hMemoryDC, 0, 0, width, height, hMonitorDC, 0, 0, SRCCOPY);
-  SelectObject(hMemoryDC, hOldBitmap);
+    IDXGIOutput* dxgiOutput = nullptr;
+    hr = dxgiAdapter->EnumOutputs(1, &dxgiOutput); // TODO: screen choose
+    if (FAILED(hr)) {
+      reset();
+      return;
+    }
+    dxgiAdapter->Release();
 
-  DeleteDC(hMemoryDC);
-  DeleteDC(hMonitorDC);
+    IDXGIOutput1* dxgiOutput1 = nullptr;
+    hr = dxgiOutput->QueryInterface(__uuidof(IDXGIOutput1), reinterpret_cast<void**>(&dxgiOutput1));
+    if (FAILED(hr)) {
+      reset();
+      return;
+    }
+    dxgiOutput->Release();
 
-  return { hBitmap, width, height };
-}
+    // Get desktop duplication
+    hr = dxgiOutput1->DuplicateOutput(m_device.Get(), &m_duplication);
+    if (FAILED(hr)) {
+      reset();
+      return;
+    }
+    dxgiOutput1->Release();
 
+  }
 
-void RGBtoYUV(BYTE R, BYTE G, BYTE B, BYTE& Y, BYTE& U, BYTE& V) {
-  int yTemp = 0.299 * R + 0.587 * G + 0.114 * B;
-  int uTemp = -0.14713 * R - 0.28886 * G + 0.436 * B + 128;
-  int vTemp = 0.615 * R - 0.51498 * G - 0.10001 * B + 128;
+  Frame nextFrame()
+  {
+    IDXGIResource* desktopResource = nullptr;
+    DXGI_OUTDUPL_FRAME_INFO frameInfo;
 
-  Y = static_cast<BYTE>(std::max(0, std::min(255, yTemp)));
-  U = static_cast<BYTE>(std::max(0, std::min(255, uTemp)));
-  V = static_cast<BYTE>(std::max(0, std::min(255, vTemp)));
-}
+    if (m_frameAcquired) {
+      m_duplication->ReleaseFrame();
+      m_frameAcquired = false;
+    }
 
+    HRESULT hr = m_duplication->AcquireNextFrame(INFINITE, &frameInfo, &desktopResource);
+    if (FAILED(hr)) {
+      if (hr == DXGI_ERROR_ACCESS_LOST) {
+        // TODO
+      }
 
-// Function to create YUV frame_data from HBITMAP
-std::vector<uint8_t> CreateYUVFrameFromHBITMAP(HBITMAP hBitmap, int width, int height) {
-  // Calculate the size for YUV 4:2:0 format
-  std::vector<uint8_t> data(width * height + (width * height) / 4 + (width * height) / 4);
+      return {};
+    }
+    m_frameAcquired = true;
 
-  HDC hdcScreen = GetDC(NULL);
-  HDC hdcMem = CreateCompatibleDC(hdcScreen);
+    // Get the DXGI surface
+    hr = desktopResource->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(m_desktopTexture.GetAddressOf()));
+    if (FAILED(hr)) {
+      desktopResource->Release();
+      m_duplication->ReleaseFrame();
+      return {};
+    }
 
-  BITMAPINFOHEADER bi;
-  memset(&bi, 0, sizeof(bi));
-  bi.biSize = sizeof(BITMAPINFOHEADER);
-  bi.biWidth = width;
-  bi.biHeight = -height; // Negative height for top-down bitmap
-  bi.biPlanes = 1;
-  bi.biBitCount = 24; // Assuming RGB 24-bit format
-  bi.biCompression = BI_RGB;
+    // Create a staging texture if that's necessary
+    D3D11_TEXTURE2D_DESC desc;
+    m_desktopTexture->GetDesc(&desc);
 
-  // First call to GetDIBits to populate biSizeImage
-  GetDIBits(hdcMem, hBitmap, 0, height, NULL, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-  BYTE* rgbData = new BYTE[bi.biSizeImage];
+    if (!m_stagingTexture || m_width != desc.Width || m_height == desc.Height) {
+      m_width = desc.Width;
+      m_height = desc.Height;
 
-  // Second call to GetDIBits to get the actual bitmap data
-  GetDIBits(hdcMem, hBitmap, 0, height, rgbData, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+      desc.Usage = D3D11_USAGE_STAGING;
+      desc.BindFlags = 0;
+      desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+      desc.MiscFlags = 0;
+      m_device->CreateTexture2D(&desc, nullptr, &m_stagingTexture);
 
-  // Calculate the stride for the bitmap
-  int stride = ((width * bi.biBitCount + 31) / 32) * 4; // Bitmap scanline padding
+      if (!m_stagingTexture) {
+        desktopResource->Release();
+        m_duplication->ReleaseFrame();
+        return {};
+      }
+    }
 
-  for (int y = 0; y < height; y++) {
-    for (int x = 0; x < width; x++) {
-      // Correct index with stride
-      int i = (y * stride) + (x * 3);
-      BYTE B = rgbData[i];
-      BYTE G = rgbData[i + 1];
-      BYTE R = rgbData[i + 2];
+    m_context->CopyResource(m_stagingTexture.Get(), m_desktopTexture.Get());
+    desktopResource->Release();
 
-      BYTE Y, U, V;
-      RGBtoYUV(R, G, B, Y, U, V);
+    D3D11_MAPPED_SUBRESOURCE mappedResource;
+    hr = m_context->Map(m_stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mappedResource);
+    if (FAILED(hr)) {
+      m_stagingTexture->Release();
+      return { m_width, m_height, m_buffer };
+    }
 
-      data.data()[y * width + x] = Y;
+    // Convert BGRA to YUV420
+    const auto yuvSize = m_width * m_height * 3 / 2;
+    if (m_buffer.size() != yuvSize) {
+      m_buffer.resize(yuvSize);
+    }
 
-      // Correct subsampling for U and V components
-      if (x % 2 == 0 && y % 2 == 0) {
-        int uvIndex = (y / 2) * (width / 2) + (x / 2);
-        data.data()[width * height + uvIndex] = U; // U plane
-        data.data()[width * height + (width * height / 4) + uvIndex] = V; // V plane
+    rgbToYuv(mappedResource, m_width, m_height);
+
+    // Unmap and release the staging texture
+    m_context->Unmap(m_stagingTexture.Get(), 0);
+
+    return {m_width, m_height, m_buffer};
+  }
+
+  void rgbToYuv(D3D11_MAPPED_SUBRESOURCE mappedResource, size_t width, size_t height)
+  {
+    auto srcPtr = static_cast<uint8_t*>(mappedResource.pData);
+
+    // Lambda functions for YUV conversion
+    auto rgbToY = [](uint8_t r, uint8_t g, uint8_t b) -> uint8_t {
+      return static_cast<uint8_t>((0.299 * r) + (0.587 * g) + (0.114 * b));
+      };
+
+    auto rgbToU = [](uint8_t r, uint8_t g, uint8_t b, int& sumU) -> uint8_t {
+      sumU += (128 - (0.168736 * r) - (0.331264 * g) + (0.5 * b));
+      return 0;  // Placeholder, real value computed in averaging step
+      };
+
+    auto rgbToV = [](uint8_t r, uint8_t g, uint8_t b, int& sumV) -> uint8_t {
+      sumV += (128 + (0.5 * r) - (0.418688 * g) - (0.081312 * b));
+      return 0;  // Placeholder, real value computed in averaging step
+      };
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        int srcIndex = (y * mappedResource.RowPitch) + (x * 4); // 4 bytes per pixel in source (BGRA)
+        uint8_t b = srcPtr[srcIndex];
+        uint8_t g = srcPtr[srcIndex + 1];
+        uint8_t r = srcPtr[srcIndex + 2];
+
+        // Set Y value
+        m_buffer[y * width + x] = rgbToY(r, g, b);
+
+        // Compute and average U and V values for 2x2 blocks
+        if (x % 2 == 0 && y % 2 == 0) {
+          int sumU = 0, sumV = 0;
+          for (int dy = 0; dy < 2; ++dy) {
+            for (int dx = 0; dx < 2; ++dx) {
+              if ((y + dy) < height && (x + dx) < width) {
+                int i = (y + dy) * width + (x + dx);
+                rgbToU(r, g, b, sumU);
+                rgbToV(r, g, b, sumV);
+              }
+            }
+          }
+
+          int uvIndex = width * height + (y / 2) * (width / 2) + (x / 2);
+          m_buffer[uvIndex] = sumU / 4; // Average U
+          m_buffer[uvIndex + width * height / 4] = sumV / 4; // Average V
+        }
       }
     }
   }
 
-  // Clean up resources
-  DeleteDC(hdcMem);
-  ReleaseDC(NULL, hdcScreen);
-  delete[] rgbData;
+  void reset()
+  {
+    // TODO: cleanup
+  }
 
-  return data;
+private:
+  Microsoft::WRL::ComPtr<ID3D11Device> m_device;
+  Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_context;
+  Microsoft::WRL::ComPtr<IDXGIOutputDuplication> m_duplication;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> m_desktopTexture;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> m_stagingTexture;
+
+  std::vector<uint8_t> m_buffer;
+  bool m_frameAcquired{ false };
+
+  size_t m_width{};
+  size_t m_height{};
+};
+
+
+WindowCapturer::WindowCapturer()
+  : m_impl(std::make_unique<AcceleratedWindowCapturer>())
+{
 }
 
-
+WindowCapturer::~WindowCapturer()
+{
 }
 
 Frame WindowCapturer::capture(size_t id)
 {
-  const auto start = std::chrono::high_resolution_clock::now();
-
-  auto bitmap = CaptureScreen(id);
-  auto out = Frame{
-    static_cast<size_t>(bitmap.width),
-    static_cast<size_t>(bitmap.height),
-    CreateYUVFrameFromHBITMAP(bitmap.bmp, bitmap.width, bitmap.height)
-  };
-
-  DeleteObject(bitmap.bmp);
-
-  return out;
+  return m_impl->nextFrame();
 }
 
 }
