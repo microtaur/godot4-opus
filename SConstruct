@@ -12,6 +12,9 @@ env.Append(CPPPATH=["src/"])
 sources = Glob("src/*.cpp")
 sources += Glob("src/platform/win32/*.cpp")
 
+includes = Glob("src/*.h")
+includes += Glob("src/platform/win32/*.h")
+
 # Append additional library paths and libraries for Opus, Speex, and vpx
 env.Append(CPPPATH=['#3rdparty/opus/include', '#3rdparty/speex/include', '#3rdparty/libvpx/include'])
 env.Append(LIBPATH=['#3rdparty/opus/lib', '#3rdparty/speex/lib', '#3rdparty/libvpx/lib/x64'])
@@ -51,10 +54,14 @@ srcs = []
 for s in sources:
     srcs.append(s.abspath)
 
+incs = []
+for s in includes:
+    incs.append(s.abspath)
 
 msvs_project = env.MSVSProject(
     target = project_name + env['MSVSPROJECTSUFFIX'],
     srcs = srcs,
+    incs = incs,
     include_dirs = env['CPPPATH'],
     lib_dirs = env['LIBPATH'],
     libs = env['LIBS'],
