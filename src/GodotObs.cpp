@@ -1,16 +1,12 @@
 #include "GodotObs.h"
-
 #include <godot_cpp/variant/utility_functions.hpp>
-
 #include <Windows.h>
-#include "platform/win32/capture_window.h"
-
-//#define PROFILER_ENABLED
-
-#include<chrono>
+#include <chrono>
 
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Gdi32.lib")
+
+//#define PROFILER_ENABLED
 
 namespace godot {
 
@@ -65,40 +61,45 @@ Obs::Obs()
   m_cfg.g_w = 1920;
   m_cfg.g_h = 1080;
   m_cfg.rc_target_bitrate = 1500;
-  m_cfg.g_timebase.num = 1; // TODO: remove?
-  m_cfg.g_timebase.den = 30; // TODO: expose
+  m_cfg.g_timebase.num = 1000;
+  m_cfg.g_timebase.den = 30001;
   m_cfg.g_lag_in_frames = 0;
-  m_cfg.g_threads = 4;
+  m_cfg.g_threads = 8;
   //m_cfg.g_error_resilient = VPX_ERROR_RESILIENT_DEFAULT;
-  //m_cfg.g_timebase = (1000.f / 30000.0);
+  m_cfg.g_pass = VPX_RC_ONE_PASS; // TODO: consider doing two-pass
+  m_cfg.kf_max_dist = 1; // Currently necessary because of WebRTC buffer limitations
+  m_cfg.kf_min_dist = 1; // Maybe we should split data that being sent through rpc?
 
   res = vpx_codec_enc_init(&m_encoder, vpx_codec_vp9_cx(), &m_cfg, 0);
   ERR_FAIL_COND_MSG(res != VPX_CODEC_OK, "VP9 could not be initialized");
 
   vpx_codec_control(&m_encoder, VP8E_SET_CPUUSED, 13);
 
-  // decoder initialize
   res = vpx_codec_dec_init(&m_decoder, vpx_codec_vp9_dx(), nullptr, 0);
   ERR_FAIL_COND_MSG(res != VPX_CODEC_OK, "Could not intitialize decoder");
 
-  m_imageBuffer = Image::create(1920, 1080, false, godot::Image::FORMAT_RGB8);
+  m_imageBuffer = Image::create(1920, 1080, false, godot::Image::FORMAT_RGB8); // TODO: adjust resolution
 }
 
 Obs::~Obs()
 {
-
+  // TODO: cleanup
 }
 
 
 PackedByteArray Obs::getEncodedScreenFrame(size_t id)
 {
+#ifdef PROFILER_ENABLED
   const auto start = std::chrono::high_resolution_clock::now();
+#endif
 
   vpx_codec_err_t res{};
-  auto capturer = microtaur::WindowCapturer{};
-  auto frame = capturer.capture(id);
-
   ERR_FAIL_COND_V_MSG(!&m_encoder, {}, "VP9 encoder is not initialized");
+
+  auto frame = m_capturer.capture(id);
+  if (frame.data.empty()) {
+    return {};
+  }
 
   vpx_image_t img;
   vpx_img_wrap(&img, VPX_IMG_FMT_I420, 1920, 1080, 1, frame.data.data());
@@ -112,7 +113,6 @@ PackedByteArray Obs::getEncodedScreenFrame(size_t id)
   PackedByteArray out;
   while ((pkt = vpx_codec_get_cx_data(&m_encoder, &iter))) {
     if (pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
-
       out.resize(pkt->data.frame.sz);
       std::memcpy(&out[0], pkt->data.frame.buf, pkt->data.frame.sz);
 
@@ -141,7 +141,9 @@ void Obs::renderFrameToMesh(PackedByteArray frame, Ref<StandardMaterial3D> mat)
 
   vpx_codec_err_t res{};
   res = vpx_codec_decode(&m_decoder, (const uint8_t*)&frame[0], frame.size(), NULL, 0);
-  ERR_FAIL_COND_MSG(res != VPX_CODEC_OK, "VP9 decode failed");
+  if (res != VPX_CODEC_OK) {
+    return;
+  }
 
   vpx_codec_iter_t iter = NULL;
   vpx_image_t* img = NULL;
@@ -156,18 +158,18 @@ void Obs::renderFrameToMesh(PackedByteArray frame, Ref<StandardMaterial3D> mat)
     }
 
     mat->set_texture(godot::StandardMaterial3D::TEXTURE_ALBEDO, m_imageTexture);
+  }
 
 #ifdef PROFILER_ENABLED
-    auto end = std::chrono::high_resolution_clock::now();
-    auto decodeTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    m_totalDecodeTime += decodeTime;
-    m_decodeCount++;
-    m_avgDecodeTime = static_cast<double>(m_totalDecodeTime) / m_decodeCount;
-    if (m_decodeCount % 10 == 0) {
-      UtilityFunctions::print("Average Decode time: ", m_avgDecodeTime);
-    }
-#endif
+  auto end = std::chrono::high_resolution_clock::now();
+  auto decodeTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  m_totalDecodeTime += decodeTime;
+  m_decodeCount++;
+  m_avgDecodeTime = static_cast<double>(m_totalDecodeTime) / m_decodeCount;
+  if (m_decodeCount % 10 == 0) {
+    UtilityFunctions::print("Average Decode time: ", m_avgDecodeTime);
   }
+#endif
 }
 
 }

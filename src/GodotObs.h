@@ -13,6 +13,8 @@
 #include <vpx/vpx_decoder.h>
 #include <vpx/vpx_codec.h>
 
+#include "platform/win32/capture_window.h"
+
 namespace godot {
 
 class Obs : public Node
@@ -43,6 +45,7 @@ private:
 	Ref<Image> m_imageBuffer{};
 	Ref<ImageTexture> m_imageTexture{};
 
+	// TODO: create proper profiler
 	size_t m_avgEncodeTime{};
 	size_t m_encodeCount{};
 	size_t m_totalEncodeTime{};
@@ -50,6 +53,8 @@ private:
 	size_t m_avgDecodeTime{};
 	size_t m_decodeCount{};
 	size_t m_totalDecodeTime{};
+
+	microtaur::WindowCapturer m_capturer{};
 };
 
 }

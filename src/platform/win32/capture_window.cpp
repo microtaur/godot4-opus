@@ -2,6 +2,9 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <chrono>
+#include <thread>
+#include <iomanip>
+#include <sstream>
 
 #include <d3d11.h>
 #include <dxgi1_2.h>
@@ -98,11 +101,14 @@ public:
 
     HRESULT hr = m_duplication->AcquireNextFrame(INFINITE, &frameInfo, &desktopResource);
     if (FAILED(hr)) {
-      if (hr == DXGI_ERROR_ACCESS_LOST) {
-        // TODO
+      if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
+        // TODO: maybe adjust this value?
+        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        return {};
       }
 
-      return {};
+      reset();
+      return { m_width, m_height, m_buffer };
     }
     m_frameAcquired = true;
 
@@ -211,7 +217,16 @@ public:
 
   void reset()
   {
-    // TODO: cleanup
+    m_stagingTexture.Reset();
+    m_desktopTexture.Reset();
+    m_duplication.Reset();
+    m_context.Reset();
+    m_device.Reset();
+
+    m_width = m_height = 0;
+    m_frameAcquired = false;
+
+    init();
   }
 
 private:
