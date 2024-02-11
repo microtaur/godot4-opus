@@ -167,49 +167,37 @@ public:
 
   void rgbToYuv(D3D11_MAPPED_SUBRESOURCE mappedResource, size_t width, size_t height)
   {
-    auto srcPtr = static_cast<uint8_t*>(mappedResource.pData);
+    auto rgb = static_cast<uint8_t*>(mappedResource.pData);
 
-    // Lambda functions for YUV conversion
-    auto rgbToY = [](uint8_t r, uint8_t g, uint8_t b) -> uint8_t {
-      return static_cast<uint8_t>((0.299 * r) + (0.587 * g) + (0.114 * b));
-      };
+    size_t upos = width * height;
+    size_t vpos = upos + upos / 4;
+    size_t i = 0;
 
-    auto rgbToU = [](uint8_t r, uint8_t g, uint8_t b, int& sumU) -> uint8_t {
-      sumU += (128 - (0.168736 * r) - (0.331264 * g) + (0.5 * b));
-      return 0;  // Placeholder, real value computed in averaging step
-      };
+    for (size_t line = 0; line < height; ++line) {
+      if (!(line % 2)) {
+        for (size_t x = 0; x < width; x += 2) {
+          uint8_t b = rgb[4 * i];
+          uint8_t g = rgb[4 * i + 1];
+          uint8_t r = rgb[4 * i + 2];
 
-    auto rgbToV = [](uint8_t r, uint8_t g, uint8_t b, int& sumV) -> uint8_t {
-      sumV += (128 + (0.5 * r) - (0.418688 * g) - (0.081312 * b));
-      return 0;  // Placeholder, real value computed in averaging step
-      };
+          m_buffer[i++] = ((66 * r + 129 * g + 25 * b) >> 8) + 16;
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        int srcIndex = (y * mappedResource.RowPitch) + (x * 4); // 4 bytes per pixel in source (BGRA)
-        uint8_t b = srcPtr[srcIndex];
-        uint8_t g = srcPtr[srcIndex + 1];
-        uint8_t r = srcPtr[srcIndex + 2];
+          m_buffer[upos++] = ((-38 * r + -74 * g + 112 * b) >> 8) + 128;
+          m_buffer[vpos++] = ((112 * r + -94 * g + -18 * b) >> 8) + 128;
 
-        // Set Y value
-        m_buffer[y * width + x] = rgbToY(r, g, b);
+          b = rgb[4 * i];
+          g = rgb[4 * i + 1];
+          r = rgb[4 * i + 2];
 
-        // Compute and average U and V values for 2x2 blocks
-        if (x % 2 == 0 && y % 2 == 0) {
-          int sumU = 0, sumV = 0;
-          for (int dy = 0; dy < 2; ++dy) {
-            for (int dx = 0; dx < 2; ++dx) {
-              if ((y + dy) < height && (x + dx) < width) {
-                int i = (y + dy) * width + (x + dx);
-                rgbToU(r, g, b, sumU);
-                rgbToV(r, g, b, sumV);
-              }
-            }
-          }
+          m_buffer[i++] = ((66 * r + 129 * g + 25 * b) >> 8) + 16;
+        }
+      } else {
+        for (size_t x = 0; x < width; x += 1) {
+          uint8_t b = rgb[4 * i];
+          uint8_t g = rgb[4 * i + 1];
+          uint8_t r = rgb[4 * i + 2];
 
-          int uvIndex = width * height + (y / 2) * (width / 2) + (x / 2);
-          m_buffer[uvIndex] = sumU / 4; // Average U
-          m_buffer[uvIndex + width * height / 4] = sumV / 4; // Average V
+          m_buffer[i++] = ((66 * r + 129 * g + 25 * b) >> 8) + 16;
         }
       }
     }
