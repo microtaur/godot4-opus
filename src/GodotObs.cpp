@@ -12,14 +12,18 @@ namespace godot {
 
 namespace {
 
-inline void YUVToRGB(int Y, int U, int V, BYTE& R, BYTE& G, BYTE& B) {
-  R = std::max(0, std::min(255, static_cast<int>(Y + 1.402 * (V - 128))));
-  G = std::max(0, std::min(255, static_cast<int>(Y - 0.344136 * (U - 128) - 0.714136 * (V - 128))));
-  B = std::max(0, std::min(255, static_cast<int>(Y + 1.772 * (U - 128))));
+constexpr size_t WIDTH = 1280;
+constexpr size_t HEIGHT = 720;
+
+#define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
+
+void YUVToRGB(int Y, int U, int V, uint8_t& R, uint8_t& G, uint8_t& B) {
+  R = CLIP((Y + (91881 * V >> 16) - 179));
+  G = CLIP((Y - ((22544 * U + 46793 * V) >> 16) + 135));
+  B = CLIP((Y + (116129 * U >> 16) - 226));
 }
 
-inline void ConvertToRGB420(unsigned char* planes[4], int stride[4], godot::Ref<godot::Image> m_imageBuffer, int width, int height) {
-  constexpr float inv_255 = 1.0f / 255.0f;
+void ConvertToRGB420(unsigned char* planes[4], int stride[4], godot::Ref<godot::Image> m_imageBuffer, int width, int height) {
   auto data = m_imageBuffer->get_data().ptr();
 
   for (int y = 0; y < height; ++y) {
@@ -29,7 +33,7 @@ inline void ConvertToRGB420(unsigned char* planes[4], int stride[4], godot::Ref<
       int U = planes[VPX_PLANE_U][uv_row + (x / 2)];
       int V = planes[VPX_PLANE_V][uv_row + (x / 2)];
 
-      BYTE R, G, B;
+      uint8_t R, G, B;
       YUVToRGB(Y, U, V, R, G, B);
 
       const auto index = (y * width + x) * 3;
@@ -58,8 +62,8 @@ Obs::Obs()
   res = vpx_codec_enc_config_default(vpx_codec_vp9_cx(), &m_cfg, 0);
   ERR_FAIL_COND_MSG(res != VPX_CODEC_OK, "VP9 cfg fail");
 
-  m_cfg.g_w = 1920;
-  m_cfg.g_h = 1080;
+  m_cfg.g_w = WIDTH;
+  m_cfg.g_h = HEIGHT;
   m_cfg.rc_target_bitrate = 1500;
   m_cfg.g_timebase.num = 1000;
   m_cfg.g_timebase.den = 30001;
@@ -78,7 +82,7 @@ Obs::Obs()
   res = vpx_codec_dec_init(&m_decoder, vpx_codec_vp9_dx(), nullptr, 0);
   ERR_FAIL_COND_MSG(res != VPX_CODEC_OK, "Could not intitialize decoder");
 
-  m_imageBuffer = Image::create(1920, 1080, false, godot::Image::FORMAT_RGB8); // TODO: adjust resolution
+  m_imageBuffer = Image::create(WIDTH, HEIGHT, false, godot::Image::FORMAT_RGB8); // TODO: adjust resolution
 }
 
 Obs::~Obs()
@@ -96,13 +100,13 @@ PackedByteArray Obs::getEncodedScreenFrame(size_t id)
   vpx_codec_err_t res{};
   ERR_FAIL_COND_V_MSG(!&m_encoder, {}, "VP9 encoder is not initialized");
 
-  auto frame = m_capturer.capture(id);
+  auto frame = m_capturer.capture(id, WIDTH, HEIGHT);
   if (frame.data.empty()) {
     return {};
   }
 
   vpx_image_t img;
-  vpx_img_wrap(&img, VPX_IMG_FMT_I420, 1920, 1080, 1, frame.data.data());
+  vpx_img_wrap(&img, VPX_IMG_FMT_I420, WIDTH, HEIGHT, 1, frame.data.data());
 
   res = vpx_codec_encode(&m_encoder, &img, 0, 1, 0, VPX_DL_REALTIME);
   ERR_FAIL_COND_V_MSG(res != VPX_CODEC_OK, {}, "Could not encode frame");
@@ -148,7 +152,7 @@ void Obs::renderFrameToMesh(PackedByteArray frame, Ref<StandardMaterial3D> mat)
   vpx_codec_iter_t iter = NULL;
   vpx_image_t* img = NULL;
   while ((img = vpx_codec_get_frame(&m_decoder, &iter)) != NULL) {
-    ConvertToRGB420(img->planes, img->stride, m_imageBuffer, 1920, 1080);
+    ConvertToRGB420(img->planes, img->stride, m_imageBuffer, WIDTH, HEIGHT);
 
     if (m_imageTexture.is_null()) {
       m_imageTexture = ImageTexture::create_from_image(m_imageBuffer);

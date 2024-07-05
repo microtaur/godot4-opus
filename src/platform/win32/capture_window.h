@@ -20,7 +20,7 @@ public:
   WindowCapturer();
   ~WindowCapturer();
 
-  Frame capture(size_t id = 0);
+  Frame capture(size_t id, size_t width, size_t height);
 
 private:
   std::unique_ptr<AcceleratedWindowCapturer> m_impl;
