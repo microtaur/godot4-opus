@@ -18,8 +18,18 @@
 
 using namespace godot;
 
-namespace microtaur
+namespace microtaur {
+
+namespace {
+
+BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData)
 {
+  auto* count = reinterpret_cast<size_t*>(dwData);
+  (*count)++;
+  return TRUE;
+}
+
+}
 
 class AcceleratedWindowCapturer
 {
@@ -64,7 +74,7 @@ public:
     dxgiDevice->Release();
 
     IDXGIOutput* dxgiOutput = nullptr;
-    hr = dxgiAdapter->EnumOutputs(1, &dxgiOutput); // TODO: screen choose
+    hr = dxgiAdapter->EnumOutputs(m_currentScreen, &dxgiOutput);
     if (FAILED(hr)) {
       reset();
       return;
@@ -377,6 +387,17 @@ public:
     init();
   }
 
+  void setCurrentScreen(size_t target)
+  {
+    m_currentScreen = target;
+    reset();
+  }
+
+  size_t getCurrentScreen() const
+  {
+    return m_currentScreen;
+  }
+
 private:
   Microsoft::WRL::ComPtr<ID3D11Device> m_device;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_context;
@@ -390,6 +411,8 @@ private:
 
   size_t m_width{};
   size_t m_height{};
+
+  size_t m_currentScreen{};
 };
 
 
@@ -404,7 +427,21 @@ WindowCapturer::~WindowCapturer()
 
 Frame WindowCapturer::capture(size_t id, size_t width, size_t height)
 {
+  if (id != m_impl->getCurrentScreen()) {
+    m_impl->setCurrentScreen(id);
+  }
+
   return m_impl->nextFrame(width, height);
+}
+
+size_t ScreenEnumerator::count()
+{
+  size_t c = 0;
+  if (EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM)&c)) {
+    return c;
+  }
+
+  return -1;
 }
 
 }

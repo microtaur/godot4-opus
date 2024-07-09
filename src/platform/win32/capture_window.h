@@ -27,4 +27,10 @@ private:
 
 };
 
+class ScreenEnumerator
+{
+public:
+  static size_t count();
+};
+
 }

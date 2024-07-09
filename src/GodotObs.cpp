@@ -51,6 +51,7 @@ void Obs::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("get_screen_frame"), &Obs::getEncodedScreenFrame);
   ClassDB::bind_method(D_METHOD("render_frame"), &Obs::renderFrameToMesh);
+  ClassDB::bind_method(D_METHOD("get_screen_count"), &Obs::getScreenCount);
 }
 
 
@@ -174,6 +175,11 @@ void Obs::renderFrameToMesh(PackedByteArray frame, Ref<StandardMaterial3D> mat)
     UtilityFunctions::print("Average Decode time: ", m_avgDecodeTime);
   }
 #endif
+}
+
+size_t Obs::getScreenCount() const
+{
+  return microtaur::ScreenEnumerator().count();
 }
 
 }
