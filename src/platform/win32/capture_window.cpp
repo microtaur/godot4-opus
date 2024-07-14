@@ -34,11 +34,7 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 class AcceleratedWindowCapturer
 {
 public:
-  AcceleratedWindowCapturer() {
-    init();
-  }
-
-  void init()
+  bool init()
   {
     D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
     auto hr = D3D11CreateDevice(
@@ -55,21 +51,21 @@ public:
     );
     if (FAILED(hr)) {
       reset();
-      return;
+      return false;
     }
 
     IDXGIDevice* dxgiDevice = nullptr;
     hr = m_device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&dxgiDevice));
     if (FAILED(hr)) {
       reset();
-      return;
+      return false;
     }
 
     IDXGIAdapter* dxgiAdapter = nullptr;
     hr = dxgiDevice->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void**>(&dxgiAdapter));
     if (FAILED(hr)) {
       reset();
-      return;
+      return false;
     }
     dxgiDevice->Release();
 
@@ -77,7 +73,7 @@ public:
     hr = dxgiAdapter->EnumOutputs(m_currentScreen, &dxgiOutput);
     if (FAILED(hr)) {
       reset();
-      return;
+      return false;
     }
     dxgiAdapter->Release();
 
@@ -85,7 +81,7 @@ public:
     hr = dxgiOutput->QueryInterface(__uuidof(IDXGIOutput1), reinterpret_cast<void**>(&dxgiOutput1));
     if (FAILED(hr)) {
       reset();
-      return;
+      return false;
     }
     dxgiOutput->Release();
 
@@ -93,10 +89,12 @@ public:
     hr = dxgiOutput1->DuplicateOutput(m_device.Get(), &m_duplication);
     if (FAILED(hr)) {
       reset();
-      return;
+      return false;
     }
     dxgiOutput1->Release();
 
+    m_failedAttempts = 0;
+    return true;
   }
 
   Frame nextFrame(size_t outputWidth, size_t outputHeight)
@@ -384,6 +382,10 @@ public:
     m_width = m_height = 0;
     m_frameAcquired = false;
 
+    if (m_failedAttempts++ > 3) {
+      return;
+    }
+
     init();
   }
 
@@ -399,6 +401,8 @@ public:
   }
 
 private:
+  constexpr static auto m_maxFails{ 3 };
+
   Microsoft::WRL::ComPtr<ID3D11Device> m_device;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_context;
   Microsoft::WRL::ComPtr<IDXGIOutputDuplication> m_duplication;
@@ -412,6 +416,8 @@ private:
   size_t m_width{};
   size_t m_height{};
 
+  size_t m_failedAttempts{};
+
   size_t m_currentScreen{};
 };
 
@@ -423,6 +429,11 @@ WindowCapturer::WindowCapturer()
 
 WindowCapturer::~WindowCapturer()
 {
+}
+
+bool WindowCapturer::init()
+{
+  return m_impl->init();
 }
 
 Frame WindowCapturer::capture(size_t id, size_t width, size_t height)

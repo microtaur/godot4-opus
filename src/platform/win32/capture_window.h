@@ -20,6 +20,8 @@ public:
   WindowCapturer();
   ~WindowCapturer();
 
+  bool init();
+
   Frame capture(size_t id, size_t width, size_t height);
 
 private:
