@@ -13,6 +13,7 @@
 
 #include "GodotOpus.h"
 #include "AudioProcessor.h"
+#include "AudioCapture.h"
 #include "GodotObs.h"
 
 using namespace godot;
@@ -25,6 +26,7 @@ void gdextension_initialize(ModuleInitializationLevel p_level)
 	{
 		ClassDB::register_class<Opus>();
 		ClassDB::register_class<AudioProcessor>();
+		ClassDB::register_class<AudioCapture>();
 		ClassDB::register_class<Obs>();
 	}
 }
