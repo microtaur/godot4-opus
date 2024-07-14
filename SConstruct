@@ -18,7 +18,9 @@ includes += Glob("src/platform/win32/*.h")
 # Append additional library paths and libraries for Opus, Speex, and vpx
 env.Append(CPPPATH=['#3rdparty/opus/include', '#3rdparty/speex/include', '#3rdparty/libvpx/include'])
 env.Append(LIBPATH=['#3rdparty/opus/lib', '#3rdparty/speex/lib', '#3rdparty/libvpx/lib/x64'])
-env.Append(LIBS=['opus', 'libspeex', 'libspeexdsp', 'vpx'])
+env.Append(LIBS=['opus', 'libspeex', 'libspeexdsp', 'libvpx'])
+
+env.Append(CCFLAGS='/MD')
 
 # Determine extension and addon path
 (extension_path,) = glob("export/addons/*/*.gdextension")
