@@ -28,9 +28,10 @@ public:
 	Obs();
 	~Obs();
 
+	bool startCapture();
+
 	PackedByteArray getEncodedScreenFrame(size_t id);
 	void renderFrameToMesh(PackedByteArray frame, Ref<StandardMaterial3D> mat);
-
 	size_t getScreenCount() const;
 
 private:

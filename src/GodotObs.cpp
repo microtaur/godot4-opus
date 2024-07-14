@@ -52,6 +52,7 @@ void Obs::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_screen_frame"), &Obs::getEncodedScreenFrame);
   ClassDB::bind_method(D_METHOD("render_frame"), &Obs::renderFrameToMesh);
   ClassDB::bind_method(D_METHOD("get_screen_count"), &Obs::getScreenCount);
+  ClassDB::bind_method(D_METHOD("start_capture"), &Obs::startCapture);
 }
 
 
@@ -89,6 +90,12 @@ Obs::Obs()
 Obs::~Obs()
 {
   // TODO: cleanup
+}
+
+
+bool Obs::startCapture()
+{
+  return m_capturer.init();
 }
 
 
