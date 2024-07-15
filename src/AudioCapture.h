@@ -20,20 +20,22 @@ protected:
 
 public:
 	AudioCapture();
+	~AudioCapture();
 
-	Array getFrame() const;
+	PackedVector2Array getFrame() const;
 
-	void process();
-  void start(Ref<AudioStreamGeneratorPlayback> playback);
+	void setGain(float gain);
 
 private:
-	IAudioClient* m_audioClient = nullptr;
-	IAudioCaptureClient* m_captureClient = nullptr;
+	IMMDeviceEnumerator* m_deviceEnumerator{nullptr};
+	IMMDevice* m_device{nullptr};
+	IAudioClient* m_audioClient{nullptr};
+	IAudioCaptureClient* m_captureClient{nullptr};
 
   Ref<AudioStreamGenerator> m_audioStream;
   Ref<AudioStreamGeneratorPlayback> m_audioPlayback;
 
-
+	float m_gain{0.9};
 };
 
 }

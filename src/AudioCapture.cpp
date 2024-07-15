@@ -1,29 +1,18 @@
 #include "AudioCapture.h"
 
-#include <windows.h>
-#include <mmdeviceapi.h>
-#include <audioclient.h>
-#include <iostream>
-
 #include <godot_cpp/variant/utility_functions.hpp>
 
 namespace godot {
 
-
 void AudioCapture::_bind_methods()
 {
-  ClassDB::bind_method(D_METHOD("process"), &AudioCapture::process);
-  ClassDB::bind_method(D_METHOD("start"), &AudioCapture::start);
   ClassDB::bind_method(D_METHOD("get_frame"), &AudioCapture::getFrame);
+  ClassDB::bind_method(D_METHOD("get_gain"), &AudioCapture::setGain);
 }
 
 AudioCapture::AudioCapture()
 {
-  UtilityFunctions::print("BEDZIE RUCHANES");
-
   HRESULT hr;
-  IMMDeviceEnumerator* pEnumerator = nullptr;
-  IMMDevice* pDevice = nullptr;
 
   hr = CoInitialize(nullptr);
   if (FAILED(hr)) {
@@ -31,19 +20,19 @@ AudioCapture::AudioCapture()
     return;
   }
 
-  hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&pEnumerator));
+  hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&m_deviceEnumerator));
   if (FAILED(hr)) {
     UtilityFunctions::printerr("CoCreateInstance failed:", hr);
     return;
   }
 
-  hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
+  hr = m_deviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &m_device);
   if (FAILED(hr)) {
     UtilityFunctions::printerr("GetDefaultAudioEndpoint failed:", hr);
     return;
   }
 
-  hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&m_audioClient);
+  hr = m_device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&m_audioClient);
   if (FAILED(hr)) {
     UtilityFunctions::printerr("Device activate failed:", hr);
     return;
@@ -68,13 +57,38 @@ AudioCapture::AudioCapture()
     return;
   }
 
-  UtilityFunctions::print("Gites majonez");
+  hr = m_audioClient->Start();
+  if (FAILED(hr)) {
+    UtilityFunctions::printerr("Start failed:", hr);
+    return;
+  };
 }
 
-Array AudioCapture::getFrame() const
+AudioCapture::~AudioCapture()
 {
-  // TODO: common pre-resized buffer?
-  Array out{};
+  if (m_captureClient) {
+    m_captureClient->Release();
+  }
+
+  if (m_audioClient) {
+    m_audioClient->Release();
+  }
+
+  if (m_device) {
+    m_device->Release();
+  }
+
+  if (m_deviceEnumerator) {
+    m_deviceEnumerator->Release();
+  }
+
+  CoUninitialize();
+}
+
+
+PackedVector2Array AudioCapture::getFrame() const
+{
+  PackedVector2Array out{};
 
   UINT32 len = 0;
   UINT32 frames = 0;
@@ -91,11 +105,8 @@ Array AudioCapture::getFrame() const
       for (UINT32 i = 0; i < frames; ++i) {
         float leftChannel = pfData[i * 2];
         float rightChannel = pfData[i * 2 + 1];
-        out.push_back(Vector2(leftChannel, rightChannel));
+        out.push_back(Vector2(leftChannel * m_gain, rightChannel * m_gain));
       }
-    }
-    else {
-      //out.push_back(Vector2(0, 0));
     }
 
     m_captureClient->ReleaseBuffer(frames);
@@ -105,45 +116,9 @@ Array AudioCapture::getFrame() const
   return out;
 }
 
-void AudioCapture::process()
+void AudioCapture::setGain(float gain)
 {
-  UINT32 len = 0;
-  UINT32 frames = 0;
-  DWORD flags = 0;
-
-  m_captureClient->GetNextPacketSize(&len);
-
-  while (len > 0) {
-    BYTE* pData = nullptr;
-    m_captureClient->GetBuffer(&pData, &frames, &flags, NULL, NULL);
-
-    if (pData && frames > 0) {
-      float* pfData = (float*)pData;
-      for (UINT32 i = 0; i < frames; ++i) {
-        float leftChannel = pfData[i * 2];
-        float rightChannel = pfData[i * 2 + 1];
-        m_audioPlayback->push_frame(Vector2(leftChannel, rightChannel));
-      }
-    }
-    else {
-      m_audioPlayback->push_frame(Vector2(0, 0));
-    }
-
-    m_captureClient->ReleaseBuffer(frames);
-    m_captureClient->GetNextPacketSize(&len);
-  }
-
-}
-
-void AudioCapture::start(Ref<AudioStreamGeneratorPlayback> playback)
-{
-  m_audioPlayback = playback;
-
-  const auto hr = m_audioClient->Start();
-  if (FAILED(hr)) {
-    UtilityFunctions::printerr("Start failed:", hr);
-    return;
-  };
+  m_gain = gain;
 }
 
 }
